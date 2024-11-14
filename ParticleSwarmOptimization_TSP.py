@@ -2,31 +2,34 @@ import math
 import random
 import tkinter as tk
 
-# Constant for the number of cities and graphical settings
+# Configuration constants
 num_cities = 25
 city_scale = 5
 road_width = 2
 padding = 100
 
 
+# Node class representing a city
 class Node:
     def __init__(self, x, y):
-        self.x = x # X-coordinate of the city
-        self.y = y # Y-coordinate of the city
+        self.x = x # x-coordinate of the city
+        self.y = y # y-coordinate of the city
 
     def draw(self, canvas, color='black'):
-        # Daw the city on the canvas
+        # Draw the city as a circle on the canvas
         canvas.create_oval(self.x - city_scale, self.y - city_scale,
                            self.x + city_scale, self.y + city_scale, fill=color)
 
 
+# Edge class representing a road between two cities
 class Edge:
     def __init__(self, a, b):
-        self.city_a = a
-        self.city_b = b
-        self.length = math.hypot(a.x - b.x, a.y - b.y)
+        self.city_a = a # First city
+        self.city_b = b # Second city
+        self.length = math.hypot(a.x - b.x, a.y - b.y) # Calculate road length
 
     def draw(self, canvas, color='grey', style=(2, 4)):
+        # Draw the road as a dashed line on the canvas
         canvas.create_line(self.city_a.x,
                            self.city_a.y,
                            self.city_b.x,
@@ -36,6 +39,7 @@ class Edge:
                            dash=style)
 
 
+# UI class for the application
 class UI(tk.Tk):
     def __init__(self):
         # Initialize the Tkinter window
@@ -65,6 +69,7 @@ class UI(tk.Tk):
         salesman_menu.add_command(label="Generate Cities", command=self.generate_cities_and_edges)
         salesman_menu.add_command(label="Solve with 2-Opt", command=self.solve_with_two_opt)
         salesman_menu.add_command(label="Solve with Genetic Algorithm", command=self.solve_with_genetic)
+        salesman_menu.add_command(label="Solve with PSO", command=self.solve_with_pso)
 
         self.mainloop()
 
@@ -140,23 +145,23 @@ class UI(tk.Tk):
 
         i = self.iteration_i
         k = self.iteration_k
-        new_tour = self.swap_two_opt(self.tour, i, k)
-        new_distance = self.calculate_tour_distance(new_tour)
+        new_tour = self.swap_two_opt(self.tour, i, k) # Swap segments
+        new_distance = self.calculate_tour_distance(new_tour) # Calculate new distance
 
         if new_distance < self.best_distance:
-            self.tour = new_tour
+            self.tour = new_tour # Update tour if new distance is better
             self.best_distance = new_distance
             print(f"New best distance: {self.best_distance:.2f}")
-            self.iteration_i = 1
+            self.iteration_i = 1 # Reset iteration indices
             self.iteration_k = self.iteration_i + 1
-            self.display_current_tour()
+            self.display_current_tour() # Display updated tour
         else:
-            self.iteration_k += 1
+            self.iteration_k += 1 # Increment k for next swap
             if self.iteration_k >= len(self.tour):
-                self.iteration_i += 1
+                self.iteration_i += 1 # Increment i to move to the next segment
                 self.iteration_k = self.iteration_i + 1
 
-        self.after(1, self.perform_two_opt_optimization)
+        self.after(1, self.perform_two_opt_optimization) # Schedule next optimization step
 
     def display_current_tour(self):
         # Clear the canvas and draw the current tour
@@ -170,53 +175,53 @@ class UI(tk.Tk):
             self.canvas.create_line(city_a.x, city_a.y, city_b.x, city_b.y, fill='red', width=road_width)
 
         for city in self.cities:
-            city.draw(self.canvas, 'red')
+            city.draw(self.canvas, 'red') # Draw current cities in red
 
     def solve_with_genetic(self):
         # Check if cities are available to solve
         if not self.cities:
             return
-        self.setup_genetic_algorithm()
-        self.evolve_population()
+        self.setup_genetic_algorithm() # Initialize genetic algorithm
+        self.evolve_population() # Start evolving population
 
     def setup_genetic_algorithm(self):
         # Initialize parameters for the genetic algorithm
         self.population_size = 100
         self.generations = 500
         self.mutation_rate = 0.01
-        self.create_initial_population()
-        self.generation = 0
-        self.best_individual = None
-        self.best_distance = float('inf')
+        self.create_initial_population() # Create initial population
+        self.generation = 0 # Start generation count
+        self.best_individual = None # Track the best individual found
+        self.best_distance = float('inf') # Initialize best distance
 
     def create_initial_population(self):
         # Create a random initial population
         self.population = []
         for _ in range(self.population_size):
             individual = list(range(len(self.cities)))
-            random.shuffle(individual)
+            random.shuffle(individual) # Shuffle to create a random tour
             self.population.append(individual)
 
     def evolve_population(self):
         # Evolve the population over generations
         if self.generation >= self.generations:
             print(f"Genetic Algorithm complete. Final distance: {self.best_distance:.2f}")
-            self.tour = self.best_individual
+            self.tour = self.best_individual # Set the best tour found
             self.display_current_tour()
             return
 
-        self.generation += 1
-        self.evaluate_population()
-        self.perform_selection()
-        self.perform_crossover()
-        self.perform_mutation()
-        self.after(1, self.evolve_population)
+        self.generation += 1 # increment generation count
+        self.evaluate_population() # Evaluate fitness of individuals
+        self.perform_selection() # Select individuals for the next generation
+        self.perform_crossover() # Create new individuals via crossover
+        self.perform_mutation() # Apply mutation to the population
+        self.after(1, self.evolve_population) # Schedule next evolution step
 
     def evaluate_population(self):
         # Evaluate the fitness of each individual in the population
         fitness_scores = []
         for individual in self.population:
-            distance = self.calculate_tour_distance(individual)
+            distance = self.calculate_tour_distance(individual) # Calculate distance of the tour
             fitness_scores.append((1 / distance, individual))
             if distance < self.best_distance:
                 self.best_distance = distance
@@ -242,81 +247,99 @@ class UI(tk.Tk):
         for _ in range(self.population_size):
             r = random.random()
             for i, cumulative_probability in enumerate(cumulative_probabilities):
-                if r <= cumulative_probability:
+                if r < cumulative_probability:
                     new_population.append(self.population[i])
                     break
         self.population = new_population
 
     def perform_crossover(self):
-        # Create new individuals through crossover
+        # Perform crossover between selected individuals
         new_population = []
-        for i in range(0, self.population_size, 2):
-            parent1 = self.population[i]
-            parent2 = self.population[i + 1] if i + 1 < self.population_size else self.population[0]
-            child1, child2 = self.order_crossover(parent1, parent2)
-            new_population.extend([child1, child2])
+        for _ in range(self.population_size // 2):
+            parent_a = random.choice(self.population)
+            parent_b = random.choice(self.population)
+            crossover_point = random.randint(1, len(parent_a) - 1)
+            child_a = parent_a[:crossover_point] + [gene for gene in parent_b if gene not in parent_a[:crossover_point]]
+            child_b = parent_b[:crossover_point] + [gene for gene in parent_a if gene not in parent_b[:crossover_point]]
+            new_population.append(child_a)
+            new_population.append(child_b)
         self.population = new_population
 
-    def order_crossover(self, parent1, parent2):
-        # Perform ordered crossover between two parents
-        size = len(parent1)
-        start, end = sorted(random.sample(range(size), 2))
-
-        child1 = [None] * size
-        child1[start:end + 1] = parent1[start:end + 1]
-        self.fill_remaining_genes(child1, parent2)
-
-        child2 = [None] * size
-        child2[start:end + 1] = parent2[start:end + 1]
-        self.fill_remaining_genes(        child2, parent1)
-
-        return child1, child2
-
-    def fill_remaining_genes(self, child, parent):
-        # Fill in the remaining genes in the child that are not already in it
-        pointer = 0
-        for gene in parent:
-            if gene not in child:
-                while child[pointer] is not None:  # Find the next available spot in child
-                    pointer += 1
-                child[pointer] = gene
-
     def perform_mutation(self):
-        # Mutate individuals in the population
+        # Apply mutation to the population
         for individual in self.population:
-            if random.random() < self.mutation_rate:  # Check if mutation occurs
-                i, j = random.sample(range(len(individual)), 2)  # Select two random positions
-                individual[i], individual[j] = individual[j], individual[i]  # Swap the positions
+            if random.random() < self.mutation_rate:
+                idx_a, idx_b = random.sample(range(len(individual)), 2)
+                individual[idx_a], individual[idx_b] = individual[idx_b], individual[idx_a]
 
-# Node and Edge classes should be defined here
-class Node:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
+    def solve_with_pso(self):
+        # Check if cities are available to solve
+        if not self.cities:
+            return
+        self.setup_pso_algorithm()
+        self.run_pso()
 
-    def draw(self, canvas, color):
-        # Draw the city on the canvas
-        radius = 5
-        canvas.create_oval(self.x - radius, self.y - radius,
-                           self.x + radius, self.y + radius,
-                           fill=color)
+    def setup_pso_algorithm(self):
+        # Initialize parameters for the PSO algorithm
+        self.num_particles = 30
+        self.max_iterations = 100
+        self.particles = []
+        self.best_global_position = None
+        self.best_global_distance = float('inf')
 
-class Edge:
-    def __init__(self, city1, city2):
-        self.city1 = city1
-        self.city2 = city2
+        # Create particles with random initial positions
+        for _ in range(self.num_particles):
+            particle = {
+                'position': list(range(len(self.cities))),
+                'velocity': [random.uniform(-1, 1) for _ in range(len(self.cities))],
+                'best_position': None,
+                'best_distance': float('inf')
+            }
+            random.shuffle(particle['position'])
+            self.particles.append(particle)
 
-    def draw(self, canvas, color, style=(1, 0)):
-        # Draw the edge between two cities
-        canvas.create_line(self.city1.x, self.city1.y,
-                           self.city2.x, self.city2.y,
-                           fill=color, dash=style)
+    def run_pso(self):
+        # Main PSO loop
+        for iteration in range(self.max_iterations):
+            for particle in self.particles:
+                distance = self.calculate_tour_distance(particle['position'])
 
-# Constants
-num_cities = 10  # Specify the number of cities
-padding = 50     # Padding for city generation
-road_width = 2   # Width of the road lines
+                # Update personal best
+                if distance < particle['best_distance']:
+                    particle['best_distance'] = distance
+                    particle['best_position'] = particle['position'].copy()
 
-# Run the application
+                # Update global best
+                if distance < self.best_global_distance:
+                    self.best_global_distance = distance
+                    self.best_global_position = particle['position'].copy()
+
+                # Update velocity and position
+                for i in range(len(particle['position'])):
+                    inertia = particle['velocity'][i]
+                    cognitive = random.uniform(0, 1) * (particle['best_position'][i] - particle['position'][i])
+                    social = random.uniform(0, 1) * (self.best_global_position[i] - particle['position'][i])
+                    particle['velocity'][i] = inertia + cognitive + social
+
+                    # Update position and ensure it's a valid city index
+                    new_index = int(particle['position'][i] + particle['velocity'][i])
+                    new_index = max(0, min(new_index, len(self.cities) - 1))  # Keep within bounds
+                    particle['position'][i] = new_index  # Ensure indices are within the valid range
+
+                # Ensure position represents a valid tour (permutation)
+                particle['position'] = list(set(particle['position']))[:len(self.cities)]
+                while len(particle['position']) < len(self.cities):
+                    # Add random cities to ensure complete tour
+                    random_city = random.choice([x for x in range(len(self.cities)) if x not in particle['position']])
+                    particle['position'].append(random_city)
+
+            print(f"Iteration {iteration + 1}/{self.max_iterations}, Best Distance: {self.best_global_distance:.2f}")
+
+        # Once complete, display the best tour found by PSO
+        self.tour = self.best_global_position
+        self.display_current_tour()
+        print(f"PSO Optimization complete. Final distance: {self.best_global_distance:.2f}")
+
+
 if __name__ == "__main__":
-    app = UI()
+    UI()
