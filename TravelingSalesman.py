@@ -28,7 +28,6 @@ class Node:
             fill='blue'
         )
 
-
 class Edge:
     def __init__(self, a, b):
         self.city_a = a
@@ -54,8 +53,14 @@ class TSP_Solver:
         random.shuffle(self.current_solution)
         self.best_solution = self.current_solution[:]
         self.best_distance = self.calculate_total_distance(self.best_solution)
-        self.temperature = 10000
-        self.cooling_rate = 0.995
+        self.temperature = 1000  # Adjusted initial temperature
+        self.min_temperature = 1e-4  # Minimum temperature for stopping
+        self.cooling_rate = 0.999  # Slower cooling rate
+        self.iterations_per_temp = 100  # More iterations at each temperature
+        self.iteration = 0
+        self.max_iterations = 100000  # Maximum iterations
+        self.no_improvement_counter = 0
+        self.max_no_improvement = 1000  # Early stopping criteria
 
     def calculate_distance_matrix(self):
         matrix = [[0]*self.num_cities for _ in range(self.num_cities)]
@@ -77,24 +82,34 @@ class TSP_Solver:
             distance += self.distance_matrix[a][b]
         return distance
 
-    def swap_cities(self, solution):
+    def two_opt_swap(self, solution):
         new_solution = solution[:]
-        i, j = random.sample(range(self.num_cities), 2)
-        new_solution[i], new_solution[j] = new_solution[j], new_solution[i]
+        i, k = sorted(random.sample(range(1, self.num_cities), 2))
+        new_solution[i:k] = reversed(new_solution[i:k])
         return new_solution
 
     def anneal(self):
-        new_solution = self.swap_cities(self.current_solution)
-        current_distance = self.calculate_total_distance(self.current_solution)
-        new_distance = self.calculate_total_distance(new_solution)
-        acceptance_prob = self.acceptance_probability(current_distance, new_distance, self.temperature)
-        if acceptance_prob > random.random():
-            self.current_solution = new_solution
-            current_distance = new_distance
-            if current_distance < self.best_distance:
-                self.best_distance = current_distance
-                self.best_solution = self.current_solution[:]
-        self.temperature *= self.cooling_rate
+        for _ in range(self.iterations_per_temp):
+            self.iteration += 1
+            new_solution = self.two_opt_swap(self.current_solution)
+            current_distance = self.calculate_total_distance(self.current_solution)
+            new_distance = self.calculate_total_distance(new_solution)
+            acceptance_prob = self.acceptance_probability(current_distance, new_distance, self.temperature)
+            if acceptance_prob > random.random():
+                self.current_solution = new_solution
+                current_distance = new_distance
+                if current_distance < self.best_distance:
+                    self.best_distance = current_distance
+                    self.best_solution = self.current_solution[:]
+                    self.no_improvement_counter = 0
+                else:
+                    self.no_improvement_counter += 1
+            else:
+                self.no_improvement_counter += 1
+            if self.no_improvement_counter > self.max_no_improvement or self.iteration > self.max_iterations:
+                self.temperature = self.min_temperature  # Force termination
+                break
+        self.temperature = max(self.temperature * self.cooling_rate, self.min_temperature)
 
     def acceptance_probability(self, current_distance, new_distance, temperature):
         if new_distance < current_distance:
@@ -173,10 +188,13 @@ class UI(tk.Tk):
         self.run_solver()
 
     def run_solver(self):
-        if self.is_running and self.tsp_solver.temperature > 1:
+        if self.is_running and self.tsp_solver.temperature > self.tsp_solver.min_temperature:
             self.tsp_solver.anneal()
             self.clear_canvas()
-            self.draw_solution(self.tsp_solver.current_solution)
+            # Draw the best solution so far
+            self.draw_solution(self.tsp_solver.best_solution, path_color='green', city_color='blue')
+            # Optionally, draw the current solution in a different color
+            self.draw_solution(self.tsp_solver.current_solution, path_color='red', city_color='yellow', draw_cities=False)
             self.canvas.update()
             self.after(1, self.run_solver)
         else:
@@ -194,20 +212,21 @@ class UI(tk.Tk):
             anchor='nw'
         )
 
-    def draw_solution(self, solution):
+    def draw_solution(self, solution, path_color='red', city_color='blue', draw_cities=True):
         # Draw the path
         for i in range(len(solution)):
             city_a = self.cities_list[solution[i]]
             city_b = self.cities_list[solution[(i + 1) % len(solution)]]
             edge = Edge(city_a, city_b)
-            edge.draw(self.canvas, color='red')  # Solid lines for the solution path
-        # Draw the cities
-        for city in self.cities_list:
-            city.draw(self.canvas, color='blue')
-        # Display current distance
+            edge.draw(self.canvas, color=path_color)  # Use the specified path color
+        # Draw the cities if required
+        if draw_cities:
+            for city in self.cities_list:
+                city.draw(self.canvas, color=city_color)
+        # Display current best distance
         self.canvas.create_text(
             padding, padding // 2,
-            text=f"Current Distance: {int(self.tsp_solver.best_distance)}",
+            text=f"Current Best Distance: {int(self.tsp_solver.best_distance)}",
             font=('Arial', 20, 'bold'),
             fill='green',
             anchor='nw'
