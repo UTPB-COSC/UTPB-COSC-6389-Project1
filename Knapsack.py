@@ -223,75 +223,59 @@ class UI(tk.Tk):
             return abs(gene_sum(genome) - self.target)
 
         def get_population(last_pop=None, fitnesses=None):
+            global mutation_rate
             population = []
+
             if last_pop is None:
-                for g in range(pop_size):
-                    genome = []
-                    for bit in range(num_items):
-                        genome.append(random.random() < frac_target)
-                    population.append(genome)
-                return population
+                # Initialize population
+                return [
+                    [random.random() < frac_target for _ in range(num_items)]
+                    for _ in range(pop_size)
+                ]
             else:
-                # elitism
-                elites = []
-                for e in range(elitism_count):
-                    elites.append(fitnesses[e])
-                for e in last_pop:
-                    if fitness(e) in elites:
-                        population.append(e)
+                # Rank-based selection
+                ranked_indices = sorted(range(len(fitnesses)), key=lambda i: fitnesses[i])
+                ranked_pop = [last_pop[i] for i in ranked_indices]
+                ranked_weights = [1 / (rank + 1) for rank in range(len(ranked_indices))]
 
-                def select_parents(min_fitness):
-                    weights = []
-                    for parent in last_pop:
-                        if fitness(parent) == 0.0:
-                            weights.append(1.0)
-                        else:
-                            weights.append(min_fitness / fitness(parent))
+                def select_parent():
+                    return random.choices(ranked_pop, weights=ranked_weights, k=1)[0]
 
-                    def get_by_weight():
-                        idx = random.randint(0, pop_size - 1)
-                        while random.random() < weights[idx]:
-                            idx = random.randint(0, pop_size - 1)
-                        return last_pop[idx]
-
-                    return get_by_weight(), get_by_weight()
-
+                # Uniform crossover with dynamic rate
                 def crossover(parent1, parent2):
-                    length = len(parent1)
-                    x = random.randint(0, length // 2)
-                    y = x + length // 2
-                    g_out = []
-                    for i in range(length):
-                        if x < i <= y:
-                            g_out.append(parent2[i])
-                        else:
-                            g_out.append(parent1[i])
-                    if len(g_out) < num_items:
-                        print('Error!')
-                    return g_out
+                    return [
+                        random.choice([gene1, gene2]) for gene1, gene2 in zip(parent1, parent2)
+                    ]
 
-                def mutate(g_in):
-                    x = random.randint(0, len(g_in) - 1)
-                    g_out = []
-                    for i in range(len(g_in)):
-                        if i == x:
-                            g_out.append(not g_in[i])
-                        else:
-                            g_out.append(g_in[i])
-                    return g_out
+                # Dynamic mutation based on diversity
+                def mutate(genome):
+                    # Calculate diversity as the average Hamming distance between individuals
+                    unique_individuals = set(map(tuple, last_pop))
+                    diversity = len(unique_individuals) / len(last_pop)
 
-                # fill generation with new individuals
+                    # Adjust mutation rate based on diversity
+                    dynamic_rate = mutation_rate if diversity > 0.4 else mutation_rate * 2
+                    return [
+                        not gene if random.random() < dynamic_rate else gene for gene in genome
+                    ]
+
+                # Elitism
+                elites = ranked_pop[:elitism_count]
+                population.extend(elites)
+
+                # Maintain diversity using clustering
+                cluster_size = max(1, len(ranked_pop) // 10)
+                for i in range(0, len(ranked_pop), cluster_size):
+                    cluster = ranked_pop[i:i + cluster_size]
+                    if cluster:
+                        population.append(random.choice(cluster))
+
+                # Generate new individuals
                 while len(population) < pop_size:
-                    # select two random parents by weighted selection
-                    # note no guarantee of uniqueness - could get the same parent twice
-                    parents = select_parents(fitnesses[0])
-                    # perform crossover to generate new individual
-                    baby = crossover(parents[0], parents[1])
-                    # potentially perform mutation
-                    if random.random() < mutation_rate:
-                        baby = mutate(baby)
-                    # add to next generation
-                    population.append(baby)
+                    parent1, parent2 = select_parent(), select_parent()
+                    child = crossover(parent1, parent2)
+                    child = mutate(child)
+                    population.append(child)
 
                 return population
 

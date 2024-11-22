@@ -8,6 +8,12 @@ num_cities = 25
 city_scale = 5
 road_width = 2
 padding = 50
+alpha = 1.0  # Influence of pheromone
+beta = 5.0  # Influence of distance
+rho = 0.5  # Pheromone evaporation rate
+q = 100  # Constant used in pheromone update
+num_ants = 20  # Number of ants
+iterations = 100  # Number of iterations
 
 class Node:
     def __init__(self, x, y, index):
@@ -44,23 +50,20 @@ class Edge:
             **kwargs
         )
 
-class TSP_Solver:
-    def __init__(self, cities):
+class AntColonyOptimizer:
+    def __init__(self, cities, num_ants, alpha, beta, rho, q, iterations):
         self.cities = cities
+        self.num_ants = num_ants
+        self.alpha = alpha
+        self.beta = beta
+        self.rho = rho
+        self.q = q
+        self.iterations = iterations
         self.num_cities = len(cities)
         self.distance_matrix = self.calculate_distance_matrix()
-        self.current_solution = list(range(self.num_cities))
-        random.shuffle(self.current_solution)
-        self.best_solution = self.current_solution[:]
-        self.best_distance = self.calculate_total_distance(self.best_solution)
-        self.temperature = 1000  # Adjusted initial temperature
-        self.min_temperature = 1e-4  # Minimum temperature for stopping
-        self.cooling_rate = 0.999  # Slower cooling rate
-        self.iterations_per_temp = 100  # More iterations at each temperature
-        self.iteration = 0
-        self.max_iterations = 100000  # Maximum iterations
-        self.no_improvement_counter = 0
-        self.max_no_improvement = 1000  # Early stopping criteria
+        self.pheromone_matrix = [[1.0] * self.num_cities for _ in range(self.num_cities)]
+        self.best_solution = None
+        self.best_distance = float('inf')
 
     def calculate_distance_matrix(self):
         matrix = [[0]*self.num_cities for _ in range(self.num_cities)]
@@ -74,6 +77,56 @@ class TSP_Solver:
                 matrix[j][i] = dist
         return matrix
 
+    def optimize(self):
+        for iteration in range(self.iterations):
+            print(f"Iteration: {iteration + 1}")
+            all_solutions = []
+            for _ in range(self.num_ants):
+                solution = self.construct_solution()
+                distance = self.calculate_total_distance(solution)
+                all_solutions.append((solution, distance))
+                if distance < self.best_distance:
+                    self.best_distance = distance
+                    self.best_solution = solution
+            self.update_pheromones(all_solutions)
+
+    def construct_solution(self):
+        solution = [random.randint(0, self.num_cities - 1)]
+        while len(solution) < self.num_cities:
+            current_city = solution[-1]
+            next_city = self.select_next_city(current_city, solution)
+            solution.append(next_city)
+        return solution
+
+    def select_next_city(self, current_city, visited):
+        probabilities = []
+        for next_city in range(self.num_cities):
+            if next_city not in visited:
+                pheromone = self.pheromone_matrix[current_city][next_city] ** self.alpha
+                distance = self.distance_matrix[current_city][next_city] ** (-self.beta)
+                probabilities.append((next_city, pheromone * distance))
+        total_prob = sum(prob for _, prob in probabilities)
+        rand = random.uniform(0, total_prob)
+        cumulative_prob = 0.0
+        for next_city, prob in probabilities:
+            cumulative_prob += prob
+            if rand <= cumulative_prob:
+                return next_city
+        return probabilities[-1][0]
+
+    def update_pheromones(self, all_solutions):
+        # Evaporate pheromones
+        for i in range(self.num_cities):
+            for j in range(self.num_cities):
+                self.pheromone_matrix[i][j] *= (1 - self.rho)
+        # Add pheromones based on solutions
+        for solution, distance in all_solutions:
+            for i in range(len(solution)):
+                a = solution[i]
+                b = solution[(i + 1) % len(solution)]
+                self.pheromone_matrix[a][b] += self.q / distance
+                self.pheromone_matrix[b][a] += self.q / distance
+
     def calculate_total_distance(self, solution):
         distance = 0
         for i in range(len(solution)):
@@ -81,41 +134,6 @@ class TSP_Solver:
             b = solution[(i + 1) % len(solution)]
             distance += self.distance_matrix[a][b]
         return distance
-
-    def two_opt_swap(self, solution):
-        new_solution = solution[:]
-        i, k = sorted(random.sample(range(1, self.num_cities), 2))
-        new_solution[i:k] = reversed(new_solution[i:k])
-        return new_solution
-
-    def anneal(self):
-        for _ in range(self.iterations_per_temp):
-            self.iteration += 1
-            new_solution = self.two_opt_swap(self.current_solution)
-            current_distance = self.calculate_total_distance(self.current_solution)
-            new_distance = self.calculate_total_distance(new_solution)
-            acceptance_prob = self.acceptance_probability(current_distance, new_distance, self.temperature)
-            if acceptance_prob > random.random():
-                self.current_solution = new_solution
-                current_distance = new_distance
-                if current_distance < self.best_distance:
-                    self.best_distance = current_distance
-                    self.best_solution = self.current_solution[:]
-                    self.no_improvement_counter = 0
-                else:
-                    self.no_improvement_counter += 1
-            else:
-                self.no_improvement_counter += 1
-            if self.no_improvement_counter > self.max_no_improvement or self.iteration > self.max_iterations:
-                self.temperature = self.min_temperature  # Force termination
-                break
-        self.temperature = max(self.temperature * self.cooling_rate, self.min_temperature)
-
-    def acceptance_probability(self, current_distance, new_distance, temperature):
-        if new_distance < current_distance:
-            return 1.0
-        else:
-            return math.exp((current_distance - new_distance) / temperature)
 
 class UI(tk.Tk):
     def __init__(self):
@@ -146,18 +164,18 @@ class UI(tk.Tk):
         menu_bar.add_cascade(menu=menu_TS, label='Salesman', underline=0)
 
         menu_TS.add_command(label="Generate", command=self.generate, underline=0)
-        menu_TS.add_command(label="Run", command=self.start_solver, underline=0)
+        menu_TS.add_command(label="Run ACO", command=self.start_aco_solver, underline=0)
 
         # City list and solver instance
         self.cities_list = []
-        self.tsp_solver = None
+        self.aco_solver = None
         self.is_running = False
 
         # Control buttons
         self.generate_button = Button(self.control_frame, text="Generate Cities", command=self.generate, font=('Arial', 14))
         self.generate_button.pack(side=tk.LEFT, padx=5)
 
-        self.run_button = Button(self.control_frame, text="Run Solver", command=self.start_solver, font=('Arial', 14))
+        self.run_button = Button(self.control_frame, text="Run ACO Solver", command=self.start_aco_solver, font=('Arial', 14))
         self.run_button.pack(side=tk.LEFT, padx=5)
 
     def generate(self):
@@ -180,33 +198,30 @@ class UI(tk.Tk):
     def clear_canvas(self):
         self.canvas.delete("all")
 
-    def start_solver(self):
+    def start_aco_solver(self):
         if not self.cities_list:
             self.generate()
-        self.tsp_solver = TSP_Solver(self.cities_list)
+        self.aco_solver = AntColonyOptimizer(
+            self.cities_list, num_ants, alpha, beta, rho, q, iterations
+        )
         self.is_running = True
-        self.run_solver()
+        self.run_aco_solver()
 
-    def run_solver(self):
-        if self.is_running and self.tsp_solver.temperature > self.tsp_solver.min_temperature:
-            self.tsp_solver.anneal()
+    def run_aco_solver(self):
+        if self.is_running:
+            self.aco_solver.optimize()
             self.clear_canvas()
-            # Draw the best solution so far
-            self.draw_solution(self.tsp_solver.best_solution, path_color='green', city_color='blue')
-            # Optionally, draw the current solution in a different color
-            self.draw_solution(self.tsp_solver.current_solution, path_color='red', city_color='yellow', draw_cities=False)
+            # Draw the best solution found by ACO
+            self.draw_solution(self.aco_solver.best_solution, path_color='green', city_color='blue')
             self.canvas.update()
-            self.after(1, self.run_solver)
-        else:
             self.is_running = False
-            print(f"Best distance found: {self.tsp_solver.best_distance}")
             self.display_best_distance()
 
     def display_best_distance(self):
         # Add a message to display the best distance found
         self.canvas.create_text(
             padding, padding,
-            text=f"Best Distance Found: {int(self.tsp_solver.best_distance)}",
+            text=f"Best Distance Found: {int(self.aco_solver.best_distance)}",
             font=('Arial', 20, 'bold'),
             fill='green',
             anchor='nw'
@@ -226,7 +241,7 @@ class UI(tk.Tk):
         # Display current best distance
         self.canvas.create_text(
             padding, padding // 2,
-            text=f"Current Best Distance: {int(self.tsp_solver.best_distance)}",
+            text=f"Current Best Distance: {int(self.aco_solver.best_distance)}",
             font=('Arial', 20, 'bold'),
             fill='green',
             anchor='nw'
