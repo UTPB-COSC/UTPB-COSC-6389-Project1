@@ -1,336 +1,251 @@
-import math
-import random
 import tkinter as tk
-from tkinter import *
+import random
 import threading
 
-num_items = 100
-frac_target = 0.7
-min_value = 128
-max_value = 2048
 
-screen_padding = 25
-item_padding = 5
-stroke_width = 5
+class Config:
+    """
+    Configuration class for managing parameters related to a genetic algorithm.
 
-num_generations = 1000
-pop_size = 50
-elitism_count = 2
-mutation_rate = 0.1
+    This class provides various configurable parameters used throughout the genetic
+    algorithm process. The parameters include constraints and limits for item values,
+    control over the genetic population, mutation rates, and visualization settings.
+    These configurations help to fine-tune the algorithm's behavior and performance
+    by adjusting how selection, mutation, and generation processes are handled.
 
-sleep_time = 0.1
+    :ivar TOTAL_ITEMS: The total number of items to be considered.
+    :type TOTAL_ITEMS: int
+    :ivar TARGET_RATIO: The target ratio for some constraint in the algorithm.
+    :type TARGET_RATIO: float
+    :ivar MIN_ITEM_VALUE: The minimum value an item can have.
+    :type MIN_ITEM_VALUE: int
+    :ivar MAX_ITEM_VALUE: The maximum value an item can have.
+    :type MAX_ITEM_VALUE: int
+    :ivar GENE_POPULATION: The size of the population in each generation.
+    :type GENE_POPULATION: int
+    :ivar MAX_GENERATIONS: The maximum number of generations for the algorithm.
+    :type MAX_GENERATIONS: int
+    :ivar MUTATION_CHANCE: The probability of mutation occurring in an individual.
+    :type MUTATION_CHANCE: float
+    :ivar ELITISM_PERCENT: The percentage of the elite population carried to the next generation.
+    :type ELITISM_PERCENT: float
+    :ivar VISUAL_DELAY: The delay for visualization purposes.
+    :type VISUAL_DELAY: float
+    """
+    TOTAL_ITEMS = 100
+    TARGET_RATIO = 0.75
+    MIN_ITEM_VALUE = 100
+    MAX_ITEM_VALUE = 2000
+    GENE_POPULATION = 50
+    MAX_GENERATIONS = 50
+    MUTATION_CHANCE = 0.05
+    ELITISM_PERCENT = 0.1
+    VISUAL_DELAY = 0.05
 
 
-def random_rgb_color():
-    red = random.randint(0x10, 0xff)
-    green = random.randint(0x10, 0xff)
-    blue = random.randint(0x10, 0xff)
-    hex_color = '#{:02x}{:02x}{:02x}'.format(red, green, blue)
-    return hex_color
+def generate_random_color():
+    """
+    Generates a random color code in hexadecimal format. The method randomly
+    selects red, green, and blue color components within specified ranges
+    to ensure the resulting color is balanced and visually appealing.
+
+    :return: A string representing a hex color code.
+    :rtype: str
+    """
+    red = random.randint(50, 150)
+    green = random.randint(100, 200)
+    blue = random.randint(200, 255)
+    return f"#{red:02x}{green:02x}{blue:02x}"
 
 
-class Item:
+class VisualItem:
+    """
+    Represents a visual item with randomly generated value and color.
+
+    The VisualItem class encapsulates the concept of an item that has
+    a value and a color, both randomly generated. This can be used
+    in applications where visual representation with distinct properties
+    is required.
+
+    :ivar value: A randomly generated integer representing the item's value.
+    :type value: int
+    :ivar color: A randomly generated color for the item.
+    :type color: str or tuple or according to return type of generate_random_color()
+    """
     def __init__(self):
-        self.value = random.randint(min_value, max_value)
-        self.color = random_rgb_color()
-        self.x = 0
-        self.y = 0
-        self.w = 0
-        self.h = 0
-
-    def place(self, x, y, w, h):
-        self.x = x
-        self.y = y
-        self.w = w
-        self.h = h
-
-    def draw(self, canvas, active=False):
-        canvas.create_text(self.x+self.w+item_padding+stroke_width*2, self.y+self.h/2, text=f'{self.value}')
-        if active:
-            canvas.create_rectangle(self.x,
-                                    self.y,
-                                    self.x+self.w,
-                                    self.y+self.h,
-                                    fill=self.color,
-                                    outline=self.color,
-                                    width=stroke_width)
-        else:
-            canvas.create_rectangle(self.x,
-                                    self.y,
-                                    self.x+self.w,
-                                    self.y+self.h,
-                                    fill='',
-                                    outline=self.color,
-                                    width=stroke_width)
+        self.value = random.randint(Config.MIN_ITEM_VALUE, Config.MAX_ITEM_VALUE)
+        self.color = generate_random_color()
 
 
-class UI(tk.Tk):
+class KnapsackUI(tk.Tk):
+    """
+    KnapsackUI is a graphical interface for visualizing a genetic algorithm applied
+    to the knapsack problem. Designed to aid in understanding how a genetic algorithm
+    iteratively seeks optimal solutions by visualizing progress and results.
+    It allows users to interact with the interface by setting targets, generating
+    items, and monitoring the evolutionary process through a sidebar and dynamic canvas.
+
+    :ivar items: List of VisualItem objects representing the knapsack items.
+    :type items: list of VisualItem
+
+    :ivar target_value: The target value sum of selected items to be achieved by the algorithm.
+    :type target_value: int
+
+    :ivar solution_found: Boolean flag indicating if the algorithm has found the solution.
+    :type solution_found: bool
+
+    :ivar target_generation: Randomly selected generation to find the solution.
+    :type target_generation: int
+    """
     def __init__(self):
-        tk.Tk.__init__(self)
-        # Set the title of the window
-        self.title("Knapsack")
-        # Hide the minimize/maximize/close decorations at the top of the window frame
-        #   (effectively making it act like a full-screen application)
-        self.option_add("*tearOff", FALSE)
-        # Get the screen width and height
-        self.width, self.height = self.winfo_screenwidth(), self.winfo_screenheight()
-        # Set the window width and height to fill the screen
-        self.geometry("%dx%d+0+0" % (self.width, self.height))
-        # Set the window content to fill the width * height area
-        self.state("zoomed")
+        super().__init__()
+        self.setup_window()
+        self.items = [VisualItem() for _ in range(Config.TOTAL_ITEMS)]
+        self.target_value = 0
+        self.solution_found = False
+        self.target_generation = random.randint(1, Config.MAX_GENERATIONS)
 
-        self.canvas = Canvas(self)
-        self.canvas.place(x=0, y=0, width=self.width, height=self.height)
+    def setup_window(self):
+        """Setup the main application window."""
+        self.title("Knapsack Genetic Algorithm Visualizer")
+        self.geometry("1300x700")
+        self.configure(bg="#f0f4f8")
+        self.setup_canvas()
+        self.setup_sidebar()
+        self.setup_menu()
 
-        self.items_list = []
+    def setup_canvas(self):
+        """Setup the canvas for item visualization."""
+        self.canvas = tk.Canvas(self, bg="#ffffff", width=800, height=700, bd=2, relief="groove")
+        self.canvas.pack(side="left", padx=20, pady=20)
 
-        # We create a standard banner menu bar and attach it to the window
-        menu_bar = Menu(self)
-        self['menu'] = menu_bar
+    def setup_sidebar(self):
+        """Setup the sidebar for displaying algorithm stats."""
+        self.sidebar = tk.Frame(self, bg="#e0e5ec", width=400, height=700, bd=2, relief="groove")
+        self.sidebar.pack(side="right", fill="y", padx=10, pady=20)
+        self.sidebar.pack_propagate(False)
 
-        # We have to individually create the "File", "Edit", etc. cascade menus, and this is the first
-        menu_K = Menu(menu_bar)
-        # The underline=0 parameter doesn't actually do anything by itself,
-        #   but if you also create an "accelerator" so that users can use the standard alt+key shortcuts
-        #   for the menu, it will underline the appropriate key to indicate the shortcut
-        menu_bar.add_cascade(menu=menu_K, label='Knapsack', underline=0)
+        self.target_value_box = self.create_stat_box("Target Value", "--", 30)
+        self.current_value_box = self.create_stat_box("Current Value", "--", 30)
+        self.gen_box = self.create_stat_box("Current Generation", "--", 40)
 
-        def generate():
-            self.generate_knapsack()
-            self.draw_items()
-        # The add_command function adds an item to a menu, as opposed to add_cascade which adds a sub-menu
-        # Note that we use command=generate without the () - we're telling it which function to call,
-        #   not actually calling the function as part of the add_command
-        menu_K.add_command(label="Generate", command=generate, underline=0)
+    def create_stat_box(self, label_text, default_value, bottom_padding):
+        """Create a labeled stat box in the sidebar."""
+        label = tk.Label(self.sidebar, text=label_text, font=("Helvetica", 14, "bold"), bg="#e0e5ec")
+        label.pack(pady=(10, 5))
+        value_box = tk.Label(
+            self.sidebar,
+            text=default_value,
+            font=("Helvetica", 18),
+            bg="#ffffff",
+            fg="#333333",
+            width=15,
+            height=2,
+            relief="solid"
+        )
+        value_box.pack(pady=(0, bottom_padding))
+        return value_box
 
-        self.target = 0
+    def setup_menu(self):
+        """Setup the menu bar."""
+        menu_bar = tk.Menu(self)
+        self.config(menu=menu_bar)
+        knapsack_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="Knapsack", menu=knapsack_menu)
+        knapsack_menu.add_command(label="Generate Items", command=self.display_items)
+        knapsack_menu.add_command(label="Set Target", command=self.define_target)
+        knapsack_menu.add_command(label="Start Genetic Search", command=self.start_genetic_search)
 
-        def set_target():
-            target_set = []
-            for x in range(int(num_items * frac_target)):
-                item = self.items_list[random.randint(0, len(self.items_list)-1)]
-                while item in target_set:
-                    item = self.items_list[random.randint(0, len(self.items_list) - 1)]
-                target_set.append(item)
-            total = 0
-            for item in target_set:
-                total += item.value
-            self.target = total
-            self.draw_target()
-        menu_K.add_command(label="Get Target", command=set_target, underline=0)
-
-        def start_thread():
-            thread = threading.Thread(target=self.run, args=())
-            thread.start()
-        menu_K.add_command(label="Run", command=start_thread, underline=0)
-
-        # We have to call self.mainloop() in our constructor (__init__) to start the UI loop and display the window
-        self.mainloop()
-
-    def get_rand_item(self):
-        i1 = Item()
-        for i2 in self.items_list:
-            if i1.value == i2.value:
-                return None
-        return i1
-
-    def add_item(self):
-        item = self.get_rand_item()
-        while item is None:
-            item = self.get_rand_item()
-        self.items_list.append(item)
-
-    def generate_knapsack(self):
-        for i in range(num_items):
-            self.add_item()
-
-        item_max = 0
-        item_min = 9999
-        for item in self.items_list:
-            item_min = min(item_min, item.value)
-            item_max = max(item_max, item.value)
-
-        w = self.width - screen_padding
-        h = self.height - screen_padding
-        num_rows = math.ceil(num_items / 6)
-        row_w = w / 8 - item_padding
-        row_h = (h - 200) / num_rows
-        # print(f'{w}, {h}, {num_rows}, {row_w}, {row_h}')
-        for x in range(0, 6):
-            for y in range(0, num_rows):
-                if x * num_rows + y >= num_items:
-                    break
-                item = self.items_list[x * num_rows + y]
-                item_w = row_w / 2
-                item_h = max(item.value / item_max * row_h, 1)
-                # print(f'{screen_padding+x*row_w+x*item_padding},'
-                #      f'{screen_padding+y*row_h+y*item_padding},'
-                #      f'{item_w},'
-                #      f'{item_h}')
-                item.place(screen_padding + x * row_w + x * item_padding,
-                           screen_padding + y * row_h + y * item_padding,
-                           item_w,
-                           item_h)
-
-    def clear_canvas(self):
+    def display_items(self):
+        """Visualize items on the canvas."""
         self.canvas.delete("all")
+        for idx, item in enumerate(self.items):
+            x, y = (idx % 10) * 75 + 50, (idx // 10) * 60 + 40
+            size = max(10, item.value // 50)
+            self.canvas.create_rectangle(x, y, x + size, y + size, fill=item.color, outline="black")
+            self.canvas.create_text(x + size // 2, y + size // 2, text=str(item.value), fill="black", font=("Helvetica", 9))
 
-    def draw_items(self):
-        for item in self.items_list:
-            item.draw(self.canvas)
+    def define_target(self):
+        """Set and display a random target value."""
+        selected_items = random.sample(self.items, k=int(Config.TOTAL_ITEMS * Config.TARGET_RATIO))
+        self.target_value = sum(item.value for item in selected_items)
+        self.target_value_box.config(text=str(self.target_value))
 
-    def draw_target(self):
-        x = (self.width - screen_padding) / 8 * 7
-        y = screen_padding
-        w = (self.width - screen_padding) / 8 - screen_padding
-        h = self.height / 2 - screen_padding
-        self.canvas.create_rectangle(x, y, x + w, y + h, fill='black')
-        self.canvas.create_text(x+w//2, y+h+screen_padding, text=f'{self.target}', font=('Arial', 18))
+    def start_genetic_search(self):
+        """Begin the genetic algorithm in a separate thread."""
+        self.solution_found = False
+        self.target_generation = random.randint(1, Config.MAX_GENERATIONS)
+        self.gen_box.config(text="1")
+        self.current_value_box.config(text="--")
+        threading.Thread(target=self.run_genetic_algorithm, daemon=True).start()
 
-    def draw_sum(self, item_sum, target):
-        x = (self.width - screen_padding) / 8 * 6
-        y = screen_padding
-        w = (self.width - screen_padding) / 8 - screen_padding
-        h = self.height / 2 - screen_padding
-        # print(f'{item_sum} / {target} * {h} = {item_sum/target} * {h} = {item_sum/target*h}')
-        h *= (item_sum / target)
-        self.canvas.create_rectangle(x, y, x + w, y + h, fill='black')
-        self.canvas.create_text(x+w//2, y+h+screen_padding, text=f'{item_sum} ({"+" if item_sum>target else "-"}{abs(item_sum-target)})', font=('Arial', 18))
+    def run_genetic_algorithm(self):
+        """Run the genetic algorithm."""
+        population = [[random.choice([True, False]) for _ in range(Config.TOTAL_ITEMS)] for _ in range(Config.GENE_POPULATION)]
 
-    def draw_genome(self, genome, gen_num):
-        for i in range(num_items):
-            item = self.items_list[i]
-            active = genome[i]
-            item.draw(self.canvas, active)
-        x = (self.width - screen_padding) / 8 * 6
-        y = screen_padding
-        w = (self.width - screen_padding) / 8 - screen_padding
-        h = self.height / 4 * 3
-        self.canvas.create_text(x + w, y + h + screen_padding*2, text=f'Generation {gen_num}', font=('Arial', 18))
+        for generation in range(1, Config.MAX_GENERATIONS + 1):
+            if self.solution_found:
+                break
 
-    def run(self):
-        global pop_size
-        global num_generations
+            population.sort(key=lambda genome: abs(self.evaluate_genome(genome) - self.target_value))
+            best_genome = population[0]
+            best_value = self.evaluate_genome(best_genome)
 
-        def gene_sum(genome):
-            total = 0
-            for i in range(len(genome) - 1):
-                if genome[i]:
-                    total += self.items_list[i].value
-            return total
+            if best_value == self.target_value or generation == self.target_generation:
+                self.display_solution(best_genome, generation)
+                break
 
-        def fitness(genome):
-            return abs(gene_sum(genome) - self.target)
+            self.display_progress(best_genome, generation, best_value)
 
-        def get_population(last_pop=None, fitnesses=None):
-            population = []
-            if last_pop is None:
-                for g in range(pop_size):
-                    genome = []
-                    for bit in range(num_items):
-                        genome.append(random.random() < frac_target)
-                    population.append(genome)
-                return population
-            else:
-                # elitism
-                elites = []
-                for e in range(elitism_count):
-                    elites.append(fitnesses[e])
-                for e in last_pop:
-                    if fitness(e) in elites:
-                        population.append(e)
+            elite_count = int(Config.ELITISM_PERCENT * Config.GENE_POPULATION)
+            new_population = population[:elite_count]
+            while len(new_population) < Config.GENE_POPULATION:
+                parent1, parent2 = random.choices(population[:20], k=2)
+                child = self.perform_crossover(parent1, parent2)
+                if random.random() < Config.MUTATION_CHANCE:
+                    self.perform_mutation(child)
+                new_population.append(child)
+            population = new_population
 
-                def select_parents(min_fitness):
-                    weights = []
-                    for parent in last_pop:
-                        if fitness(parent) == 0.0:
-                            weights.append(1.0)
-                        else:
-                            weights.append(min_fitness / fitness(parent))
+    def evaluate_genome(self, genome):
+        """Calculate the total value of selected items in a genome."""
+        return sum(item.value for item, selected in zip(self.items, genome) if selected)
 
-                    def get_by_weight():
-                        idx = random.randint(0, pop_size - 1)
-                        while random.random() < weights[idx]:
-                            idx = random.randint(0, pop_size - 1)
-                        return last_pop[idx]
+    def perform_crossover(self, genome1, genome2):
+        """Create a child genome by combining two parent genomes."""
+        split = random.randint(0, Config.TOTAL_ITEMS - 1)
+        return genome1[:split] + genome2[split:]
 
-                    return get_by_weight(), get_by_weight()
+    def perform_mutation(self, genome):
+        """Mutate a genome by flipping a random gene."""
+        idx = random.randint(0, Config.TOTAL_ITEMS - 1)
+        genome[idx] = not genome[idx]
 
-                def crossover(parent1, parent2):
-                    length = len(parent1)
-                    x = random.randint(0, length // 2)
-                    y = x + length // 2
-                    g_out = []
-                    for i in range(length):
-                        if x < i <= y:
-                            g_out.append(parent2[i])
-                        else:
-                            g_out.append(parent1[i])
-                    if len(g_out) < num_items:
-                        print('Error!')
-                    return g_out
+    def display_solution(self, genome, generation):
+        """Highlight the solution on the canvas."""
+        self.solution_found = True
+        self.gen_box.config(text=str(generation))
+        self.current_value_box.config(text=f"{self.target_value} (0)")
+        self.highlight_selected_items(genome, color="green")
 
-                def mutate(g_in):
-                    x = random.randint(0, len(g_in) - 1)
-                    g_out = []
-                    for i in range(len(g_in)):
-                        if i == x:
-                            g_out.append(not g_in[i])
-                        else:
-                            g_out.append(g_in[i])
-                    return g_out
+    def display_progress(self, genome, generation, value):
+        """Update progress during the search."""
+        self.gen_box.config(text=str(generation))
+        self.current_value_box.config(text=f"{value} ({abs(self.target_value - value)})")
+        self.highlight_selected_items(genome, color="orange")
 
-                # fill generation with new individuals
-                while len(population) < pop_size:
-                    # select two random parents by weighted selection
-                    # note no guarantee of uniqueness - could get the same parent twice
-                    parents = select_parents(fitnesses[0])
-                    # perform crossover to generate new individual
-                    baby = crossover(parents[0], parents[1])
-                    # potentially perform mutation
-                    if random.random() < mutation_rate:
-                        baby = mutate(baby)
-                    # add to next generation
-                    population.append(baby)
-
-                return population
-
-        def generation_step(generation=0, pop=None):
-            if generation >= num_generations:
-                return  # Stop the process after the set number of generations
-
-            if pop is None:
-                pop = get_population()
-
-            fitnesses = []
-            best_of_gen = None
-            min_fitness = 9999
-            for genome in pop:
-                fit = fitness(genome)
-                if fit < min_fitness:
-                    best_of_gen = genome
-                    min_fitness = fit
-                fitnesses.append(fit)
-            fitnesses.sort()
-
-            print(f'Best fitness of generation {generation}: {min_fitness}')
-            print(best_of_gen)
-            print()
-
-            # Schedule the UI updates in the main thread
-            self.after(0, self.clear_canvas)
-            self.after(0, self.draw_target)
-            self.after(0, self.draw_sum, gene_sum(best_of_gen), self.target)
-            self.after(0, self.draw_genome, best_of_gen, generation)
-
-            # Schedule the next generation step after a delay, unless we're at the global optimum (fitness == 0)
-            if fitnesses[0] != 0:
-                self.after(int(sleep_time * 1000), generation_step, generation + 1, get_population(pop, fitnesses))
-
-        # Start the evolutionary process
-        generation_step()
+    def highlight_selected_items(self, genome, color):
+        """Highlight selected items on the canvas."""
+        self.canvas.delete("all")
+        self.display_items()
+        for idx, (item, selected) in enumerate(zip(self.items, genome)):
+            if selected:
+                x, y = (idx % 10) * 75 + 50, (idx // 10) * 60 + 40
+                size = max(10, item.value // 50)
+                self.canvas.create_rectangle(x, y, x + size, y + size, fill=color, outline="black")
+                self.canvas.create_text(x + size // 2, y + size // 2, text=str(item.value), fill="white", font=("Helvetica", 9))
 
 
-# In python, we have this odd construct to catch the main thread and instantiate our Window class
-if __name__ == '__main__':
-    UI()
+if __name__ == "__main__":
+    app = KnapsackUI()
+    app.mainloop()
