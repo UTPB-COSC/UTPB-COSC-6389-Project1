@@ -1,134 +1,162 @@
 import math
 import random
 import tkinter as tk
-from tkinter import *
-
-num_cities = 25
-num_roads = 100
-city_scale = 5
-road_width = 4
-padding = 100
+from tkinter import ttk
 
 
-class Node:
-    def __init__(self, x, y):
+class City:
+    """Represents a city in the TSP problem."""
+
+    def __init__(self, x, y, index):
         self.x = x
         self.y = y
+        self.index = index
 
-    def draw(self, canvas, color='black'):
-        canvas.create_oval(self.x-city_scale, self.y-city_scale, self.x+city_scale, self.y+city_scale, fill=color)
-
-
-class Edge:
-    def __init__(self, a, b):
-        self.city_a = a
-        self.city_b = b
-        self.length = math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)
-
-    def draw(self, canvas, color='grey', style=(2, 4)):
-        canvas.create_line(self.city_a.x,
-                           self.city_a.y,
-                           self.city_b.x,
-                           self.city_b.y,
-                           fill=color,
-                           width=road_width,
-                           dash=style)
+    def draw(self, canvas, radius=8, color="#3498db"):
+        """Draw the city as a circle on the canvas."""
+        canvas.create_oval(
+            self.x - radius, self.y - radius,
+            self.x + radius, self.y + radius,
+            fill=color, outline="white", tags="city"
+        )
 
 
-class UI(tk.Tk):
+class TravelingSalesmanApp(tk.Tk):
+    """Main application for solving the Traveling Salesman Problem."""
+
     def __init__(self):
-        tk.Tk.__init__(self)
-        # Set the title of the window
-        self.title("Traveling Salesman")
-        # Hide the minimize/maximize/close decorations at the top of the window frame
-        #   (effectively making it act like a full-screen application)
-        self.option_add("*tearOff", FALSE)
-        # Get the screen width and height
-        width, height = self.winfo_screenwidth(), self.winfo_screenheight()
-        # Set the window width and height to fill the screen
-        self.geometry("%dx%d+0+0" % (width, height))
-        # Set the window content to fill the width * height area
-        self.state("zoomed")
+        super().__init__()
+        self.title("Traveling Salesman Problem Solver")
+        self.geometry("1200x700")
+        self.configure(bg="#ecf0f1")
 
-        self.canvas = Canvas(self)
-        self.canvas.place(x=0, y=0, width=width, height=height)
-        w = width-padding
-        h = height-padding*2
+        # Data
+        self.cities = []
+        self.tour = []
+        self.best_distance = float("inf")
+        self.is_solving = False
 
-        cities_list = []
-        roads_list = []
-        edge_list = []
+        # Layout
+        self.control_frame = tk.Frame(self, bg="#2c3e50", width=300)
+        self.control_frame.pack(side=tk.LEFT, fill=tk.Y)
+        self.canvas = tk.Canvas(self, bg="white")
+        self.canvas.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        def add_city():
-            x = random.randint(padding, w)
-            y = random.randint(padding, h)
+        # Controls
+        self.add_controls()
 
-            node = Node(x, y)
-            cities_list.append(node)
+    def add_controls(self):
+        """Add control buttons and labels to the control panel."""
+        tk.Label(
+            self.control_frame, text="TSP Solver", font=("Arial", 18, "bold"),
+            bg="#2c3e50", fg="white", pady=20
+        ).pack()
 
-        def add_road():
-            a = random.randint(0, len(cities_list)-1)
-            b = random.randint(0, len(cities_list)-1)
+        ttk.Button(
+            self.control_frame, text="Generate Cities", command=self.generate_cities
+        ).pack(pady=10)
 
-            road = f'{min(a, b)},{max(a, b)}'
-            while a == b or road in roads_list:
-                a = random.randint(0, len(cities_list)-1)
-                b = random.randint(0, len(cities_list)-1)
-                road = f'{min(a, b)},{max(a, b)}'
+        ttk.Button(
+            self.control_frame, text="Solve with 2-opt", command=self.solve_with_two_opt
+        ).pack(pady=10)
 
-            edge = Edge(cities_list[a], cities_list[b])
-            roads_list.append(road)
-            edge_list.append(edge)
+        ttk.Button(
+            self.control_frame, text="Reset", command=self.reset
+        ).pack(pady=10)
 
-        def generate_city():
-            for c in range(num_cities):
-                add_city()
-            for r in range(num_roads):
-                add_road()
+        self.status_label = tk.Label(
+            self.control_frame, text="Distance: 0.00", font=("Arial", 14),
+            bg="#2c3e50", fg="white", pady=10
+        )
+        self.status_label.pack()
 
-        def draw_city():
-            #clear_canvas()
-            for e in edge_list:
-                e.draw(self.canvas)
-            for n in cities_list:
-                n.draw(self.canvas)
+    def generate_cities(self):
+        """Generate random cities."""
+        self.reset()
+        num_cities = 50
+        padding = 50
+        self.cities = [
+            City(
+                random.randint(padding, self.canvas.winfo_width() - padding),
+                random.randint(padding, self.canvas.winfo_height() - padding),
+                i
+            )
+            for i in range(num_cities)
+        ]
+        self.draw_cities()
 
-        def draw_genome(genome):
-            #clear_canvas()
-            for e in range(num_roads):
-                edge = edge_list[e]
-                color = 'grey'
-                style = (2, 4)
-                if genome[e]:
-                    color = 'red'
-                    style = (1, 0)
-                edge.draw(self.canvas, color, style)
-            for n in cities_list:
-                n.draw(self.canvas, 'red')
+    def draw_cities(self):
+        """Draw all the cities on the canvas."""
+        self.canvas.delete("city")
+        for city in self.cities:
+            city.draw(self.canvas)
 
-        # We create a standard banner menu bar and attach it to the window
-        menu_bar = Menu(self)
-        self['menu'] = menu_bar
+    def reset(self):
+        """Reset the application."""
+        self.canvas.delete("all")
+        self.cities.clear()
+        self.tour.clear()
+        self.best_distance = float("inf")
+        self.status_label.config(text="Distance: 0.00")
+        self.is_solving = False
 
-        # We have to individually create the "File", "Edit", etc. cascade menus, and this is the first
-        menu_TS = Menu(menu_bar)
-        # The underline=0 parameter doesn't actually do anything by itself,
-        #   but if you also create an "accelerator" so that users can use the standard alt+key shortcuts
-        #   for the menu, it will underline the appropriate key to indicate the shortcut
-        menu_bar.add_cascade(menu=menu_TS, label='Salesman', underline=0)
+    def solve_with_two_opt(self):
+        """Solve the TSP using the 2-opt algorithm."""
+        if not self.cities:
+            print("No cities to solve. Please generate cities first.")
+            return
 
-        def generate():
-            generate_city()
-            draw_city()
-        # The add_command function adds an item to a menu, as opposed to add_cascade which adds a sub-menu
-        # Note that we use command=generate without the () - we're telling it which function to call,
-        #   not actually calling the function as part of the add_command
-        menu_TS.add_command(label="Generate", command=generate, underline=0)
+        self.is_solving = True
+        self.tour = list(range(len(self.cities)))
+        self.best_distance = self.calculate_tour_distance(self.tour)
+        self.perform_two_opt()
 
-        # We have to call self.mainloop() in our constructor (__init__) to start the UI loop and display the window
-        self.mainloop()
+    def perform_two_opt(self):
+        """Perform the 2-opt optimization."""
+        if not self.is_solving:
+            return
+
+        improved = False
+        for i in range(len(self.tour) - 1):
+            for j in range(i + 2, len(self.tour)):
+                if j == len(self.tour) - 1 and i == 0:
+                    continue
+                new_tour = self.tour[:i + 1] + self.tour[i + 1:j + 1][::-1] + self.tour[j + 1:]
+                new_distance = self.calculate_tour_distance(new_tour)
+                if new_distance < self.best_distance:
+                    self.tour = new_tour
+                    self.best_distance = new_distance
+                    improved = True
+                    self.draw_tour()
+                    break
+            if improved:
+                break
+
+        if improved:
+            self.after(100, self.perform_two_opt)
+        else:
+            self.is_solving = False
+            print(f"Optimization complete. Best distance: {self.best_distance:.2f}")
+
+    def calculate_tour_distance(self, tour):
+        """Calculate the total distance of a given tour."""
+        distance = 0
+        for i in range(len(tour)):
+            a = self.cities[tour[i]]
+            b = self.cities[tour[(i + 1) % len(tour)]]
+            distance += math.hypot(a.x - b.x, a.y - b.y)
+        return distance
+
+    def draw_tour(self):
+        """Draw the current best tour on the canvas."""
+        self.canvas.delete("tour")
+        for i in range(len(self.tour)):
+            a = self.cities[self.tour[i]]
+            b = self.cities[self.tour[(i + 1) % len(self.tour)]]
+            self.canvas.create_line(a.x, a.y, b.x, b.y, fill="#e74c3c", width=2, tags="tour")
+        self.status_label.config(text=f"Distance: {self.best_distance:.2f}")
 
 
-# In python, we have this odd construct to catch the main thread and instantiate our Window class
-if __name__ == '__main__':
-    UI()
+if __name__ == "__main__":
+    app = TravelingSalesmanApp()
+    app.mainloop()
