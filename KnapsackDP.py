@@ -15,11 +15,6 @@ screen_padding = 25
 item_padding = 5
 stroke_width = 5
 
-num_generations = 2000
-pop_size = 100
-elitism_count = 5
-mutation_rate = 0.05
-
 sleep_time = 0.05
 
 
@@ -29,6 +24,7 @@ def random_rgb_color():
     blue = random.randint(0x10, 0xff)
     hex_color = '#{:02x}{:02x}{:02x}'.format(red, green, blue)
     return hex_color
+
 
 class Item:
     def __init__(self):
@@ -180,82 +176,36 @@ class UI(tk.Tk):
                                 text=f'{item_sum} ({"+" if item_sum > target else "-"}{abs(item_sum - target)})',
                                 font=('Arial', 18))
 
-    def draw_genome(self, genome, gen_num):
-        for i in range(num_items):
-            item = self.items_list[i]
-            active = genome[i]
-            item.draw(self.canvas, active)
-        x = (self.width - screen_padding) / 8 * 6
-        y = screen_padding
-        w = (self.width - screen_padding) / 8 - screen_padding
-        h = self.height / 4 * 3
-        self.canvas.create_text(x + w, y + h + screen_padding * 2, text=f'Generation {gen_num}', font=('Arial', 18))
+    def draw_genome(self, genome):
+        for i, is_active in enumerate(genome):
+            self.items_list[i].draw(self.canvas, is_active)
 
     def run(self):
-        global pop_size
-        global num_generations
+        # DP Algorithm
+        capacity = self.target
+        values = [item.value for item in self.items_list]
+        n = len(values)
 
-        def gene_sum(genome):
-            return np.sum(np.array([item.value for item, g in zip(self.items_list, genome) if g]))
+        dp = [[0] * (capacity + 1) for _ in range(n + 1)]
+        for i in range(1, n + 1):
+            for w in range(capacity + 1):
+                if values[i - 1] <= w:
+                    dp[i][w] = max(dp[i - 1][w], dp[i - 1][w - values[i - 1]] + values[i - 1])
+                else:
+                    dp[i][w] = dp[i - 1][w]
 
-        def fitness(genome):
-            total_value = gene_sum(genome)
-            if total_value > self.target:
-                return 0  # Penalize solutions that exceed the target
-            return total_value / self.target  # Maximize value while staying under target
+        # Backtrack to find solution
+        solution = [0] * n
+        w = capacity
+        for i in range(n, 0, -1):
+            if dp[i][w] != dp[i - 1][w]:
+                solution[i - 1] = 1
+                w -= values[i - 1]
 
-        def get_population(last_pop=None):
-            population = []
-            if last_pop is None:
-                for g in range(pop_size):
-                    genome = [random.random() < frac_target for _ in range(num_items)]
-                    population.append(genome)
-            else:
-                elites = sorted(last_pop, key=fitness, reverse=True)[:elitism_count]
-                population.extend(elites)
-
-                while len(population) < pop_size:
-                    parents = select_parents(last_pop)
-                    child = crossover(parents[0], parents[1])
-                    child = mutate(child)
-                    population.append(child)
-
-            return population
-
-        def select_parents(population):
-            def tournament_select():
-                tournament_size = 5
-                tournament = random.sample(population, tournament_size)
-                return max(tournament, key=lambda x: fitness(x))
-
-            return tournament_select(), tournament_select()
-
-        def crossover(parent1, parent2):
-            crossover_point = random.randint(0, num_items - 1)
-            return parent1[:crossover_point] + parent2[crossover_point:]
-
-        def mutate(genome):
-            return [not gene if random.random() < mutation_rate else gene for gene in genome]
-
-        def generation_step(generation=0, pop=None):
-            if generation >= num_generations:
-                return
-
-            if pop is None:
-                pop = get_population()
-
-            best_of_gen = max(pop, key=fitness)
-            best_fitness = fitness(best_of_gen)
-
-            self.after(0, self.clear_canvas)
-            self.after(0, self.draw_target)
-            self.after(0, self.draw_sum, gene_sum(best_of_gen), self.target)
-            self.after(0, self.draw_genome, best_of_gen, generation)
-
-            if best_fitness < 1:
-                self.after(int(sleep_time * 1000), generation_step, generation + 1, get_population(pop))
-
-        generation_step()
+        self.after(0, self.clear_canvas)
+        self.after(0, self.draw_target)
+        self.after(0, self.draw_sum, sum(item.value for item, s in zip(self.items_list, solution) if s), self.target)
+        self.after(0, self.draw_genome, solution)
 
 
 if __name__ == '__main__':
